@@ -1,0 +1,561 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\graphicspath{ {./figures/} }
+
+\title{Mainboard Communication protocol}
+\author{Babysim}
+\date{April 2023}
+
+\begin{document}
+
+\maketitle
+\pagebreak
+\section{Introduction}
+For the internal communication bus on the mainboard is a well described datacommunication protocol needed. This document will provide the information needed to implement the datacommunication protocol used on the mainboard in software/hardware.
+
+\section{Underlying interfacemethod}
+The underlying datacommunication protocol will be SPI. SPI is chosen because of the high data throughput and flexibility this interface method provides. However big flexibility has also down sides. One of those is the high amount of documentation and testing needed to implement our own communicationprotocol on top of spi. \\
+\pagebreak
+\section{Protocol specification}
+SPI itself leaves a lot to be filled in by the protocol on top. This offers great flexibility, however it also takes a lot of work and documentation to get it consistent. This section is dedicated to give general specifications of the data protocol used.
+\subsection{Word/character size}
+The SPI specification doesn't specify the amount of bits used in a word/character; Therefore it could be any amount of bits. However we don't live in that perfect world and the hardware used to implement the protocol on has set hard limits on the amount of bits the protocol uses.
+There are two options: 8-bits or 9-bits. \textbf{For this protocol 8-bits will be used, as it is the most commonly chosen amount of bits. }
+\subsection{Clock speed}
+The SPI specification also leaves this option open and there is also no commonly chosen speed. Therefore we chose the clock speed of 1 MHz. This (clock) frequency can also be changed later because the hardware and software is flexible enough to accept an change of clock speed.
+\subsection{Transaction}
+The SPI data interface doesn't have a standard transaction format and leaves this completely up to the protocol used. For example SPI transaction can in some devices be used in conjuction with physical extra pins describing if the transaction is a write or read operation. This is commonly used in the interface for display drivers and gives the interface a higher throughput.
+\\
+However in this protocol no extra physical pins are required. In this protocol all the transaction information is handled by wrapping the  (to be written or to be read) data bytes in to a frame with the required transaction data.\\\\
+Where A read transaction of this protocol consists of (5+n) words and a write transaction consists of (4+n) words. Where n is the amount of bytes to read from or write to a register. The difference in words between a read and write transaction is due that the slave device needs to confirm whether the message has been succesfully received, which is done immediately after receiving the data in a seperate word.
+\pagebreak\\
+\textbf{The first word will always give information related to the transaction itself.} Is the transaction a read or write operation and which register to read or write to?  \\
+\textbf{The second word is the sequence number}
+\textbf{As already mentioned... The next n amount of words will be data.}\\
+\textbf{The word after the data will contain the crc of the data read or written.}\\
+\textbf{If it was a read transaction there will be no more words sent after the crc.}
+\textbf{In a write transaction there will be an acknowledge word which describes if the previous sent words where received correctly (checked with crc).}
+\subsubsection{First word (in depth)}
+
+Instead of the physical pins describing whether the transaction is a read or write operation (as with display drivers), the third bit in the first word of a transaction is dedicated to describing whether the transaction will be a read or write transaction.
+\\\\
+Other important things to mention in the first word is the first bit of the word, which is a start bit to help against data corruption. And last but not least the REG bit field which sets the register to read from or write to.
+
+\subsubsection{The sequence word}
+To make the data transmission more reliable there is a sequence number integrated in to the protocol. This way it is easier to ask for re-transmission of data that was corrupted in the transmission.
+
+\subsubsection{The next n amount of words}
+The next n amount of words will be raw data bytes. The amount of words depends on the sensors or actuators being driven or read from. Some sensors will deliver 16-bit values others will deliver 8-bits. Same case for actuators. However there are also registers in this protocol with a fixed size.
+
+\subsubsection{The crc word}
+The last word consists of a 8-bit field with the crc of the n data bytes sent. The crc is calculated using the MAXIM CRC8 algorithm.
+
+\subsubsection{The acknowledge word}
+If the transaction was a write transaction from master to slave. Then the slave will calculate the CRC of the data received and send back an acknowledge, with 0xFF meaning success and 0x00 meaning failed.
+
+\pagebreak
+\subsubsection{Timing diagram}
+When put together a timing diagram would look like this:\\
+\includegraphics[scale=0.28]{mainboard_communication_timing_diagram.png}
+\pagebreak
+\section{Registers}
+This section will list all the registers of the mainboard.
+\subsection{Register STATUS}
+regaddr: 0x00\\
+Register size: 32-bits\\
+R/W: R\\
+\begin{table}[h!]
+    \centering
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  31 &
+  30 &
+  29 &
+  28 &
+  27 &
+  26 &
+  25 &
+  24 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+  \multicolumn{1}{c|}{\scriptsize{BBAOK}} &
+  \multicolumn{1}{c|}{\scriptsize{BBBOK}} & 
+  \multicolumn{1}{c|}{\scriptsize{BBCOK}} &
+  \multicolumn{1}{c|}{\scriptsize{BBDOK}} &
+  \multicolumn{1}{c|}{\scriptsize{x}} &
+  \multicolumn{1}{c|}{\scriptsize{x}} &
+  \multicolumn{1}{c|}{\scriptsize{BLOK}} &
+  \multicolumn{1}{c|}{\scriptsize{I2COK}} \\\cline{2-9} 
+Access &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R
+\end{tabular}
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  23 &
+  22 &
+  21 &
+  20 &
+  19 &
+  18 &
+  17 &
+  16 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+  \multicolumn{1}{c|}{\scriptsize{BAPAOK}} &
+  \multicolumn{1}{c|}{\scriptsize{BAPBOK}} & 
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{\scriptsize{BBPAOK}} &
+  \multicolumn{1}{c|}{\scriptsize{BBPBOK}} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{\scriptsize{BCPAOK}} &
+  \multicolumn{1}{c|}{\scriptsize{BCPBOK}} \\\cline{2-9} 
+Access &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R
+\end{tabular}
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  15 &
+  14 &
+  13 &
+  12 &
+  11 &
+  10 &
+  9 &
+  8 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{\scriptsize{BDPAOK}} & 
+  \multicolumn{1}{c|}{\scriptsize{BDPBOK}} &
+  \multicolumn{1}{c|}{\scriptsize{x}} &
+  \multicolumn{1}{c|}{\scriptsize{x}} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{\scriptsize{x}} &
+  \multicolumn{1}{c|}{\scriptsize{x}} \\\cline{2-9} 
+Access &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R
+\end{tabular}
+
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  7 &
+  6 &
+  5 &
+  4 &
+  3 &
+  2 &
+  1 &
+  0 \\ \cline{2-9} 
+
+\multicolumn{1}{r|}{x} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{x} & 
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{x} & 
+  \multicolumn{1}{c|}{x} & 
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{x} \\\cline{2-9} 
+  
+Access &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R &
+  R
+\end{tabular}
+\end{table}\\
+\textbf{Bit 31 - BBAOK} Backbone port A status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBAOK & Description\\ \hline
+   0x0 & Backbone port disabled\\ \hline
+   0x1 & Backbone port initialized succesfully \\ \hline
+\end{tabular}\\\\
+\textbf{Bit 30 - BBBOK} Backbone port B status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBBOK & Description\\ \hline
+   0x0 & Backbone port disabled\\ \hline
+   0x1 & Backbone port initialized succesfully \\ \hline
+\end{tabular}\\\\
+\textbf{Bit 29 - BBCOK} Backbone port C status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBCOK & Description\\ \hline
+   0x0 & Backbone port disabled\\ \hline
+   0x1 & Backbone port initialized succesfully \\ \hline
+\end{tabular}\\\\
+\pagebreak\\
+\textbf{Bit 28 - BBDOK} Backbone port D status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBDOK & Description\\ \hline
+   0x0 & Backbone port disabled\\ \hline
+   0x1 & Backbone port initialized succesfully \\ \hline
+\end{tabular}\\\\
+\textbf{Bit 25 - BLOK} Bluetooth status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BLOK & Description\\ \hline
+   0x0 & Bluetooth disabled\\ \hline
+   0x1 & Bluetooth initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 24 - I2COK} I2C status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   I2COK & Description\\ \hline
+   0x0 & I2C bus disabled\\ \hline
+   0x1 & I2C bus initialized succesfully \\ \hline
+\end{tabular}\\\\
+\textbf{Bit 23 - BAPAOK} Backbone A SensorHub/ActuatorHub port A status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BAPAOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 22 - BAPBOK} Backbone A SensorHub/ActuatorHub port B status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BAPBOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 20 - BBPAOK} Backbone B SensorHub/ActuatorHub port A status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBPAOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 19 - BBPBOK} Backbone B SensorHub/ActuatorHub port B status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BBPBOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 17 - BCPAOK} Backbone C SensorHub/ActuatorHub port A status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BCPAOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 16 - BCPBOK} Backbone C SensorHub/ActuatorHub port B status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BCPBOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 14 - BDPAOK} Backbone D SensorHub/ActuatorHub port A status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BDPAOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\textbf{Bit 13 - BDPBOK} Backbone D SensorHub/ActuatorHub port B status\\\\
+\begin{tabular}{|c|l|}
+    \hline
+   BDPBOK & Description\\ \hline
+   0x0 & Sensor or Actuatorport disabled\\ \hline
+   0x1 & Sensor or Actuatorport initialized succesfully and active\\ \hline
+\end{tabular}\\\\
+\subsection{Register BBSETx}
+regaddr: 0x01 + backbone\_port\_index (0x01-0x04)\\
+Example: backbone port a: 0x01, port b: 0x02\\
+Register size: 24-bits\\
+R/W: RW\\
+\begin{table}[h!]
+    \centering
+\begin{tabular}{rp{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}}
+Bit &
+  31 &
+  30 &
+  29 &
+  28 &
+  27 &
+  26 &
+  25 &
+  24 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+  \multicolumn{2}{c}{} &
+   \multicolumn{1}{c}{} &
+  \multicolumn{2}{l}{\scriptsize{SLADDR[8:0]}} &
+  \multicolumn{1}{c}{} &
+  \multicolumn{1}{c}{} &
+  \multicolumn{1}{c|}{} \\\cline{2-9} 
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W
+\end{tabular}
+\begin{tabular}{rp{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}}
+Bit &
+  23 &
+  22 &
+  21 &
+  20 &
+  19 &
+  18 &
+  17 &
+  16 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+\multicolumn{4}{c|}{\scriptsize{PASAMPLETIME[4:0]}} & 
+\multicolumn{4}{c|}{\scriptsize{PBSAMPLETIME[4:0]}} \\\cline{2-9} 
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W
+\end{tabular}
+\begin{tabular}{rp{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}}
+Bit &
+  15 &
+  14 &
+  13 &
+  12 &
+  11 &
+  10 &
+  9 &
+  8 \\ \cline{2-9} 
+  
+\multicolumn{1}{r|}{} &
+  \multicolumn{2}{c|}{{\scriptsize{BBTYPE[1:0]}}} &
+  \multicolumn{2}{c}{} &
+  \multicolumn{2}{c}{{\scriptsize{PATYPE[6:0]}}} &
+  \multicolumn{1}{c}{} &
+  \multicolumn{1}{c|}{} \\\cline{2-9} 
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W
+\end{tabular}
+\begin{tabular}{rp{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}}
+Bit &
+  7 &
+  6 &
+  5 &
+  4 &
+  3 &
+  2 &
+  1 &
+  0 \\ \cline{2-9} 
+
+  \multicolumn{1}{r|}{} &
+  \multicolumn{2}{c}{} &
+  \multicolumn{2}{c}{\scriptsize{PBTYPE[6:0]}} &
+  \multicolumn{2}{c|}{} &
+  \multicolumn{1}{c|}{x} &
+  \multicolumn{1}{c|}{\scriptsize{ENA}} \\\cline{2-9} 
+  
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W
+\end{tabular}
+\end{table}\\
+\textbf{Bits 31:24 - SLADDR[8:0]} I2C Slave address\\
+This bit field defines the slave address of the to the backbone port connected slave device.\\\\
+\textbf{Bits 23:20 - PASAMPLETIME[4:0]} Backbone slave port sample time or time base, 1-32 Ms\\
+This bit field defines the sample time of port A of the slave device connected to Backbone x.\\\\
+\textbf{Bits 23:20 - PBSAMPLETIME[4:0]} Backbone slave port sample time or time base, 1-32 Ms\\
+This bit field defines the sample time of port B of the slave device connected to Backbone x.\\\\
+
+\textbf{Bits 15:14 - BBTYPE[1:0]} Backbone slave device type\\
+This bit field defines the slave device type connected to the backbone port.\\\\
+\begin{tabular}{|c|l|l|}
+\hline
+   BBTYPE[1:0]  &  Name & Description\\ \hline
+    0x0 &  SensorHub & SensorHub slave\\ \hline
+    0x1 & ActuatorHub & ActuatorHub slave\\ \hline
+    0x2 & Reserved & Reserved for future use\\ \hline
+    0x3 & Reserved & Reserved for future use\\
+\hline
+\end{tabular}\\\\\\
+\textbf{Bits 13:8 - PATYPE[6:0]} PORTA Type\\
+This bit field defines the sensors or actuators connected to PORT A of the SensorHub or
+ActuatorHub.\\\\
+\begin{tabular}{|c|l|l|}
+    \hline
+    PATYPE[6:0] & Name & Description \\ \hline
+    0x00 & None & No sensor is connected\\ \hline
+    0x01 & ToF & A time of flight sensor is connected\\ \hline
+    0x02 & DiffPressure & A differential pressure sensor is connected\\ \hline
+    0x03 & TouchSensor & A thoraxtouch sensor is connected\\ \hline
+    0x04 & Gyro & A gyro sensor is connected\\ \hline
+    0x05..0x20 & Reserved & Reserved for future use\\ \hline
+    0x21 & Pump & A pump actuator is connected\\ \hline
+    0x22..0x40 & Reserved & Reserved for future use \\ \hline
+\end{tabular}
+\\\\
+\textbf{Bits 7:2 - PBTYPE[6:0]} PORTB Type\\
+This bit field defines the sensors or actuators connected to PORT B of the SensorHub or
+ActuatorHub.\\\\
+\begin{tabular}{|c|l|l|}
+    \hline
+    PBTYPE[6:0] & Name & Description \\ \hline
+    0x00 & None & No sensor is connected\\ \hline
+    0x01 & ToF & A time of flight sensor is connected\\ \hline
+    0x02 & DiffPressure & A differential pressure sensor is connected\\ \hline
+    0x03 & TouchSensor & A thoraxtouch sensor is connected\\ \hline
+    0x04 & Gyro & A gyro sensor is connected\\ \hline
+    0x05..0x20 & Reserved & Reserved for future use\\ \hline
+    0x21 & Pump & A pump actuator is connected\\ \hline
+    0x22..0x40 & Reserved & Reserved for future use \\ \hline
+\end{tabular}
+\\\\
+\textbf{Bit 0 - ENA} Enable backbone port\\\\
+\begin{tabular}{|c|c|}
+    \hline
+   ENA & Description\\ \hline
+   0x0 & Backbone port disabled\\ \hline
+   0x1 & Backbone port enabled \\ \hline
+\end{tabular}
+
+\pagebreak
+
+\subsection{Register REQWORDSx}
+regaddr: 0x10 + backbone\_port\_index (0x10-0x14)\\
+Example: backbone port a: 0x10, port b: 0x11\\
+Register size: 24-bits\\
+R/W: RW\\
+\begin{table}[h!]
+    \centering
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  23 &
+  22 &
+  21 &
+  20 &
+  19 &
+  18 &
+  17 &
+  16 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+ \multicolumn{8}{c|}{\scriptsize{BxREQWORDS[7:0]}} \\\cline{2-9} 
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W 
+\end{tabular}
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  15 &
+  14 &
+  13 &
+  12 &
+  11 &
+  10 &
+  9 &
+  8 \\ \cline{2-9} 
+\multicolumn{1}{r|}{} &
+  \multicolumn{8}{c|}{\scriptsize{BxREQWORDSPA[7:0]}}  \\\cline{2-9} 
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W 
+\end{tabular}
+
+\begin{tabular}{rp{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}p{1.25cm}}
+Bit &
+  7 &
+  6 &
+  5 &
+  4 &
+  3 &
+  2 &
+  1 &
+  0 \\ \cline{2-9} 
+
+\multicolumn{1}{r|}{x} &
+  \multicolumn{8}{c|}{\scriptsize{BxREQWORDSPB[7:0]}}  \\\cline{2-9} 
+  
+Access &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W &
+  R/W 
+\end{tabular}
+\end{table}\\
+\textbf{Bits 23:16 - BxREQWORDS[7:0]} Backbone x REQWORDS\\
+This bitfield has the sum of the BxREQWORDSPA and BxREQWORDSPB register. This bitfield will be read-only when the backbone slave device is a SensorHub otherwise it will be read/write.\\\\
+\textbf{Bits 15:8 - BxREQWORDSPA[7:0]} Backbone x Slave Port A REQWORDS\\
+This bitfield is the amount of bytes that gets out of the sensor on Port A or needs to be provided to an actuator on Port A. \\
+This bitfield will be read-only when the backbone slave device is a SensorHub otherwise it will be read/write.\\\\
+\textbf{Bits 8:0 - BxREQWORDSPB[7:0]} Backbone x Slave Port B REQWORDS\\
+This bitfield is the amount of bytes that gets out of the sensor on Port B or needs to be provided to an actuator on Port B. \\
+This bitfield will be read-only when the backbone slave device is a SensorHub otherwise it will be read/write.
+\pagebreak
+\subsection{Register SENSDATA}
+regaddr: 0x30\\
+Register size: n-bits (depends on sensor) can be read from REQWORDS reg\\
+R/W: R\\
+\\
+\textbf{The bits returned will be raw sensordata.. The layout is always in alphabetical order and depends on the sensors}
+\subsection{Register ACTDATA}
+regaddr: 0x40\\
+Register size: n-bits can be set in the REQWORDS reg, default value will be defined by the actuatorhub\\
+R/W: W\\
+\\
+\textbf{The bits that need to be written will be raw actuatordata.. The layout is always in alphabetical order and depends on the actuators and bits set in REQWORDSx reg}
+
+
+\end{document}
